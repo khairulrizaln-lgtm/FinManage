@@ -87,6 +87,13 @@
                 0 0 0 1px rgba(59, 130, 246, 0.08),
                 inset 0 1px 0 0 rgba(255, 255, 255, 0.95);
         }
+        button, a, [role="button"] {
+            -webkit-tap-highlight-color: transparent;
+            transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.22s ease, opacity 0.2s ease;
+        }
+        button:active, [role="button"]:active {
+            transform: scale(0.975);
+        }
         .cool-dark-card {
             background: linear-gradient(135deg, #0b1120 0%, #0f172a 52%, #132247 100%);
             border: 1px solid rgba(148, 163, 184, 0.18);
@@ -97,12 +104,34 @@
         .tabular-nums {
             font-variant-numeric: tabular-nums;
         }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px) scale(0.99); }
-            to { opacity: 1; transform: translateY(0) scale(1); }
+        @keyframes pageEnterSmooth {
+            0% {
+                opacity: 0;
+                transform: translate3d(0, 10px, 0) scale(0.996);
+            }
+            100% {
+                opacity: 1;
+                transform: translate3d(0, 0, 0) scale(1);
+            }
+        }
+        @keyframes pageExitSmooth {
+            0% {
+                opacity: 1;
+                transform: translate3d(0, 0, 0) scale(1);
+            }
+            100% {
+                opacity: 0;
+                transform: translate3d(0, -6px, 0) scale(0.996);
+            }
         }
         .animate-fade-in {
-            animation: fadeIn 0.32s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+            animation: pageEnterSmooth 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+            will-change: transform, opacity;
+        }
+        .animate-page-exit {
+            animation: pageExitSmooth 0.16s cubic-bezier(0.22, 1, 0.36, 1) both;
+            pointer-events: none;
+            will-change: transform, opacity;
         }
         /* Bingkai tampilan ukuran handphone yang nyaman di semua layar */
         .mobile-shell {
@@ -113,11 +142,24 @@
             padding-left: max(0.875rem, env(safe-area-inset-left, 0px));
             padding-right: max(0.875rem, env(safe-area-inset-right, 0px));
         }
-        /* Dukungan layar penuh & area aman poni/notch pada semua jenis HP */
+        /* Dukungan layar penuh, scroll mulus & area aman poni/notch pada semua jenis HP */
+        html {
+            scroll-behavior: smooth;
+            -webkit-text-size-adjust: 100%;
+        }
         html, body {
             overscroll-behavior-y: none;
             touch-action: manipulation;
             min-height: 100dvh;
+            -webkit-overflow-scrolling: touch;
+        }
+        #omsetBreakdownList,
+        #omsetBarChart,
+        #calcDisplay,
+        .overflow-x-auto,
+        .overflow-y-auto {
+            -webkit-overflow-scrolling: touch;
+            scroll-behavior: smooth;
         }
         header.glass-header {
             padding-top: env(safe-area-inset-top, 0px);
@@ -841,6 +883,8 @@
         let pendingDeleteAction = null;
         let analyticsMode = 'daily';
         let activePage = 'home';
+        let pageTransitionTimer = null;
+        let pageTransitionToken = 0;
         let isAuthenticated = false;
         let isSetupMode = false;
         let passwordSetupCompleted = false;
@@ -1018,7 +1062,7 @@
 
         function switchPage(page) {
             const validPages = ['home', 'record', 'ledger', 'analytics', 'profile'];
-            activePage = validPages.includes(page) ? page : 'home';
+            const nextPage = validPages.includes(page) ? page : 'home';
 
             const pageMap = {
                 home: document.getElementById('pageHome'),
@@ -1028,13 +1072,16 @@
                 profile: document.getElementById('pageProfile')
             };
 
-            validPages.forEach(key => {
-                const sectionEl = pageMap[key];
-                const isSelected = key === activePage;
-                if (sectionEl) {
-                    sectionEl.classList.toggle('hidden', !isSelected);
-                }
-            });
+            const currentSection = pageMap[activePage];
+            const targetSection = pageMap[nextPage];
+
+            if (pageTransitionTimer) {
+                clearTimeout(pageTransitionTimer);
+                pageTransitionTimer = null;
+            }
+            const transitionId = ++pageTransitionToken;
+
+            activePage = nextPage;
 
             const navProfileBtn = document.getElementById('navProfileBtn');
             if (navProfileBtn) {
@@ -1051,7 +1098,36 @@
                 renderProfilePage();
             }
 
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+            const revealTarget = () => {
+                if (transitionId !== pageTransitionToken) return;
+                validPages.forEach(key => {
+                    const sectionEl = pageMap[key];
+                    const isSelected = key === activePage;
+                    if (sectionEl) {
+                        sectionEl.classList.remove('animate-page-exit');
+                        sectionEl.classList.toggle('hidden', !isSelected);
+                        if (isSelected) {
+                            sectionEl.classList.remove('animate-fade-in');
+                            void sectionEl.offsetWidth;
+                            sectionEl.classList.add('animate-fade-in');
+                        }
+                    }
+                });
+            };
+
+            if (currentSection && targetSection && currentSection !== targetSection && !currentSection.classList.contains('hidden')) {
+                currentSection.classList.remove('animate-fade-in');
+                currentSection.classList.add('animate-page-exit');
+                pageTransitionTimer = setTimeout(revealTarget, 140);
+            } else {
+                revealTarget();
+            }
+
+            if (window.scrollY > 4) {
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            } else {
+                window.scrollTo(0, 0);
+            }
         }
 
         function loadProfileData() {
@@ -1865,6 +1941,12 @@
             if (shouldOpen) {
                 modal.classList.remove('hidden');
                 modal.classList.add('flex');
+                const dialogCard = modal.firstElementChild;
+                if (dialogCard) {
+                    dialogCard.classList.remove('animate-fade-in');
+                    void dialogCard.offsetWidth;
+                    dialogCard.classList.add('animate-fade-in');
+                }
             } else {
                 modal.classList.add('hidden');
                 modal.classList.remove('flex');
